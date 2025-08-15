@@ -1,0 +1,57 @@
+# bot.py
+import pandas as pd
+import numpy as np
+import talib
+from binance.client import Client
+from datetime import datetime
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_KEY = os.getenv("API_KEY")
+API_SECRET = os.getenv("API_SECRET")
+
+client = Client(API_KEY, API_SECRET)
+client.API_URL = 'https://testnet.binance.vision/api'  # 🔥 Change pour prod plus tard
+
+def get_data(symbol="BTCUSDT", interval="5m", limit=100):
+    try:
+        klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
+        data = []
+        for k in klines:
+            data.append({
+                "timestamp": datetime.fromtimestamp(k[0] / 1000),
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5])
+            })
+        df = pd.DataFrame(data)
+        df['sma_20'] = talib.SMA(df['close'], timeperiod=20)
+        df['sma_50'] = talib.SMA(df['close'], timeperiod=50)
+        df['rsi'] = talib.RSI(df['close'], timeperiod=14)
+
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        signal = "Attente"
+        if prev['sma_20'] < prev['sma_50'] and last['sma_20'] > last['sma_50']:
+            signal = "ACHAT"
+        elif prev['sma_20'] > prev['sma_50'] and last['sma_20'] < last['sma_50']:
+            signal = "VENTE"
+
+        return df, signal, last['close']
+    except Exception as e:
+        return None, f"Erreur: {e}", None
+
+def place_order(symbol, side, amount=0.001):
+    try:
+        # En production : décommente
+        # if side == "BUY":
+        #     client.order_market_buy(symbol=symbol, quantity=amount)
+        # else:
+        #     client.order_market_sell(symbol=symbol, quantity=amount)
+        return f"✅ Ordre {side} simulé sur {symbol} ({amount})"
+    except Exception as e:
+        return f"❌ Échec ordre : {e}"
