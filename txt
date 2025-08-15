@@ -1,0 +1,9 @@
+streamlit
+python-binance
+pandas
+numpy
+matplotlib
+mplfinance
+ta
+python-dotenv
+plotly
