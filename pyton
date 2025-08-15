@@ -1,0 +1,90 @@
+# main.py
+import streamlit as st
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from bot import get_data, place_order
+import time
+
+st.set_page_config(page_title="🤖 Bot Trading Binance", layout="wide")
+st.title("🚀 Bot de Trading Automatisé - Binance (Testnet)")
+
+# Sidebar
+symbol = st.sidebar.text_input("Paire", "BTCUSDT").upper()
+interval = st.sidebar.selectbox("Intervalle", ["1m", "3m", "5m", "15m", "1h"])
+auto_refresh = st.sidebar.checkbox("🔄 Actualisation auto", True)
+refresh_sec = st.sidebar.slider("Fréquence (sec)", 10, 60, 30)
+
+col1, col2, col3 = st.columns(3)
+manual_buy = col1.button("🟢 Achat Manuel")
+manual_sell = col2.button("🔴 Vente Manuel")
+auto_trade = col3.checkbox("🤖 Auto Trade")
+
+status_area = st.empty()
+chart_area = st.empty()
+log_area = st.empty()
+
+if 'logs' not in st.session_state:
+    st.session_state.logs = []
+
+# Boucle principale
+while True:
+    df, signal, price = get_data(symbol, interval)
+
+    if isinstance(df, pd.DataFrame):
+        status_area.metric("💰 Prix Actuel", f"${price:,.2f}")
+        st.session_state.current_signal = signal
+
+        # Graphique
+        fig = make_subplots(
+            rows=2, cols=1, shared_xaxes=True,
+            vertical_spacing=0.1, row_heights=[0.7, 0.3],
+            subplot_titles=(f'{symbol} - Prix', 'RSI')
+        )
+
+        fig.add_trace(go.Candlestick(
+            x=df['timestamp'], open=df['open'], high=df['high'],
+            low=df['low'], close=df['close'], name="OHLC"
+        ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma_20'], name="SMA 20", line=dict(color="blue", width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma_50'], name="SMA 50", line=dict(color="red", width=1)), row=1, col=1)
+
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['rsi'], name="RSI", line=dict(color="purple")), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+
+        fig.update_layout(height=600, xaxis_rangeslider_visible=False)
+        chart_area.plotly_chart(fig, use_container_width=True)
+
+        # Auto trading
+        if auto_trade:
+            if signal == "ACHAT" and (not st.session_state.logs or st.session_state.logs[-1].get("signal") != "ACHAT"):
+                msg = place_order(symbol, "BUY")
+                st.session_state.logs.append({"time": time.strftime("%H:%M:%S"), "signal": "ACHAT", "msg": msg})
+            elif signal == "VENTE" and (not st.session_state.logs or st.session_state.logs[-1].get("signal") != "VENTE"):
+                msg = place_order(symbol, "VENTE")
+                st.session_state.logs.append({"time": time.strftime("%H:%M:%S"), "signal": "VENTE", "msg": msg})
+
+        # Manuels
+        if manual_buy:
+            msg = place_order(symbol, "BUY")
+            st.session_state.logs.append({"time": time.strftime("%H:%M:%S"), "signal": "MANUAL BUY", "msg": msg})
+        if manual_sell:
+            msg = place_order(symbol, "SELL")
+            st.session_state.logs.append({"time": time.strftime("%H:%M:%S"), "signal": "MANUAL SELL", "msg": msg})
+
+        # Logs
+        log_text = "### 📝 Journal\n"
+        for log in st.session_state.logs[-10:]:
+            emoji = "🟢" if "BUY" in log["signal"] else "🔴" if "SELL" in log["signal"] else "🟡"
+            log_text += f"{emoji} {log['time']} {log['msg']}\n"
+        log_area.markdown(log_text)
+
+        if signal in ["ACHAT", "VENTE"]:
+            st.warning(f"🚨 SIGNAL {signal} détecté !")
+    else:
+        st.error(signal)
+
+    if not auto_refresh:
+        break
+    time.sleep(refresh_sec)
